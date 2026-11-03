@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101820">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Polar H10: Herzfrequenz und RR-Intervalle lokal im Browser.">
+  <title>H10 · Live-Puls</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header><p class="eyebrow">POLAR H10 · WEB BLUETOOTH</p><h1>Live-Puls</h1>
+      <p>Dein Herzschlag. Direkt auf deinem Gerät.</p></header>
+    <section class="panel connection" aria-label="Verbindung">
+      <div><span id="status" class="badge" role="status">Getrennt</span>
+        <p id="device">Kein Sensor verbunden</p></div>
+      <button id="connect" type="button">Verbinden</button>
+      <p id="message" class="message" role="status">Brustgurt anlegen und Elektroden befeuchten.</p>
+    </section>
+    <section class="panel pulse" aria-label="Live-Messwerte">
+      <div class="meta"><span id="contact">Kontakt: unbekannt</span><span id="battery">Batterie: –</span></div>
+      <div class="heart-value"><span id="hr">–</span><span class="unit">bpm</span></div>
+      <p id="freshness">Warte auf Messdaten</p>
+    </section>
+    <section class="panel" aria-labelledby="rr-title">
+      <div class="section-heading"><h2 id="rr-title">RR-Intervalle</h2><span>ms · letzte 40 Werte</span></div>
+      <canvas id="chart" role="img" aria-label="Verlauf der letzten 40 RR-Intervalle; Werte stehen in der Liste darunter."></canvas>
+      <p class="legend">● plausibel <span>◆ außerhalb 300–2000 ms</span></p>
+      <ol id="rr-list" class="rr-list" aria-label="Letzte RR-Werte, neueste zuerst"></ol>
+      <p id="rr-empty">Noch keine RR-Intervalle empfangen.</p>
+    </section>
+    <section class="panel" aria-labelledby="stats-title">
+      <h2 id="stats-title">HRV-Dashboard</h2>
+      <label class="field">Statistikfenster <select id="stats-window"><option value="60000">60 Sekunden</option><option value="300000">5 Minuten</option></select></label>
+      <label class="filter"><input id="trim-hr" type="checkbox"> HF trimmen: je 5 % der niedrigsten/höchsten bpm für Ø HF ausschließen</label>
+      <label class="filter"><input id="filter" type="checkbox" checked> RR außerhalb 300–2000 ms ausschließen</label>
+      <dl class="stats">
+        <div><dt>Ø Herzfrequenz</dt><dd><span id="mean-hr">–</span> <small>bpm</small></dd></div>
+        <div><dt>Ø RR</dt><dd><span id="mean-rr">–</span> <small>ms</small></dd></div>
+        <div><dt>SDNN</dt><dd><span id="sdnn">–</span> <small>ms</small></dd></div>
+        <div><dt>RMSSD</dt><dd><span id="rmssd">–</span> <small>ms</small></dd></div>
+        <div><dt>pNN50</dt><dd><span id="pnn50">–</span> <small>%</small></dd></div>
+        <div><dt>Atemrate · LF-Näherung</dt><dd><span id="breathing">–</span> <small>/min</small></dd></div>
+      </dl>
+      <p id="breathing-info" class="hint"></p>
+      <p class="hint">FFT: letzter gültiger RR-Abschnitt aus bis zu 5 Minuten, 4-Hz-Interpolation, Trendabzug, Hann-Fenster. LF-Peak 0,04–0,15 Hz (2,4–9/min): nur Näherung für sehr langsame Atmung. LF enthält auch Kreislaufregulation; normale schnellere Atmung wird nicht erfasst. Keine verlässliche Atemmessung.</p>
+      <p id="sample-count" class="hint">0 RR-Werte · 0 aufeinanderfolgende Paare</p>
+      <p class="hint">SDNN: Stichproben-Standardabweichung. Ausgeschlossene Werte und Verbindungsunterbrechungen trennen RMSSD-Paare. Zeitfenster nach Empfangszeit. pNN50: Anteil gültiger Nachbarpaare mit Differenz &gt; 50 ms. Ringpuffer: maximal 2048 RR-Werte / 5 Minuten; bei Überlauf entfallen die ältesten Werte.</p>
+    </section>
+    <section class="panel" aria-labelledby="ortho-title">
+      <h2 id="ortho-title">Orthostatischer Test</h2>
+      <label class="field">Liegen (Sekunden) <input id="lying-seconds" type="number" min="15" max="300" step="1" value="60"></label>
+      <label class="field">Stehen (Sekunden) <input id="standing-seconds" type="number" min="15" max="300" step="1" value="60"></label>
+      <div class="actions"><button id="ortho-start" type="button" disabled>Test starten</button>
+        <button id="ortho-stand" type="button" hidden>Jetzt stehen · Phase starten</button>
+        <button id="ortho-cancel" class="secondary" type="button" hidden>Test abbrechen</button></div>
+      <p id="ortho-status" role="timer" aria-live="off"></p>
+      <p id="ortho-result" role="status"></p>
+      <button id="ortho-save" class="secondary" type="button" hidden>Test als Session speichern</button>
+      <button id="ortho-export" class="secondary" type="button" hidden>Test-CSV herunterladen</button>
+      <p class="hint">Erst ruhig hinlegen, dann starten. Nach dem Liegen beginnt die Stehphase erst mit deiner Bestätigung. Filtereinstellungen werden beim Start übernommen. Kontaktverlust, RR-Ausfall oder Hintergrundbetrieb brechen den Test ab. Kein diagnostischer Test.</p>
+    </section>
+    <section class="panel" aria-labelledby="record-title">
+      <h2 id="record-title">Aufnahme</h2>
+      <label class="field">Session-Name <input id="session-name" type="text" maxlength="80" placeholder="z. B. Morgenmessung"></label>
+      <div class="actions"><button id="record" type="button" disabled>Aufnahme starten</button>
+        <button id="export" class="secondary" type="button" disabled>CSV herunterladen</button>
+        <button id="save-session" class="secondary" type="button" disabled>Session speichern</button></div>
+      <p id="record-status" role="status">Nicht aktiv · 0 Messzeilen</p>
+      <p class="hint">Jeder Start erstellt eine neue Session. Stop speichert automatisch lokal; bei Fehler bleibt CSV verfügbar. Maximal 20.000 Messzeilen pro Aufnahme. Rohwerte bleiben unverändert, auch bei aktivem Filter. Die Zusammenfassung verwendet die Filter vom Aufnahmestart.</p>
+    </section>
+    <section class="panel" aria-labelledby="sessions-title">
+      <h2 id="sessions-title">Sessions</h2>
+      <p id="sessions-status" role="status"></p>
+      <ul id="sessions-list" class="sessions-list"></ul>
+      <p class="hint">Bis zu 20 Sessions, insgesamt maximal etwa 4 MB Text. Speicherung nur in diesem Browser und unter dieser Website-Adresse, ohne Cloud-Synchronisation. Browserdaten-Löschen entfernt Sessions. Wichtige Aufnahmen zusätzlich als CSV sichern.</p>
+    </section>
+    <footer>Chrome auf Android · HTTPS erforderlich<br>Keine Datenübertragung an einen Server. Kein medizinisches Diagnosegerät.</footer>
+  </main>
+</body>
+</html>
