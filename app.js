@@ -592,7 +592,8 @@
         minimumFractionDigits: 1, maximumFractionDigits: 1
       });
       ui['live-rmssd'].textContent = format(value?.rmssd ?? null);
-      ui['live-rmssd-normalized'].textContent = format(value ? value.ratio * 100 : null);
+      // 60-bpm-Bezug: RMSSD / 60 × (60000 / mittleres RR), Ergebnis in ms.
+      ui['live-rmssd-normalized'].textContent = format(value ? value.ratio * 1000 : null);
       ui['live-rmssd-count'].textContent = `${liveRMSSD.count} RR · ${liveRMSSD.pairs} Paare · 10 s-Fenster`;
     }
 

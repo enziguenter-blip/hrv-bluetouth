@@ -29,12 +29,12 @@
         <div class="heart-value"><span id="live-rmssd" class="live-number">—</span><span class="unit">ms</span></div>
         <p id="live-rmssd-count">0 RR · 0 Paare · 10 s-Fenster</p>
         <h2 id="live-rmssd-normalized-title" class="normalized-title">Pulsnormierte Live-RMSSD</h2>
-        <div class="heart-value"><span id="live-rmssd-normalized" class="live-number">—</span><span class="unit">%</span></div>
-        <p class="hint normalization-formula">CV-RMSSD = 100 × RMSSD / Ø RR desselben 10-s-Fensters</p>
+        <div class="heart-value"><span id="live-rmssd-normalized" class="live-number">—</span><span class="unit">ms</span></div>
+        <p class="hint normalization-formula">60-bpm-Bezug: 1000 × RMSSD / Ø RR desselben 10-s-Fensters = RMSSD / 60 × Fensterpuls</p>
         <label class="field">Live-RMSSD-Anzeige
           <select id="live-rmssd-mode"><option value="raw">Roh</option><option value="smoothed" selected>Geglättet</option></select>
         </label>
-        <p id="live-rmssd-note" class="hint">Ultra-Kurzzeit-RMSSD über 10 s: nicht mit 5-Minuten-Standardmessungen vergleichbar. Mindestens 5 plausible RR und ein gültiges Nachbarpaar nötig. Artefakte unterbrechen Paare. Geglättet: Mittel der letzten 3 gültigen Fensterwerte, beim Anlauf 1–2. Empfangszeit pro RR; CV-RMSSD setzt RMSSD ins Verhältnis zum mittleren RR, ist aber keine vollständige Korrektur aller Pulseinflüsse.</p>
+        <p id="live-rmssd-note" class="hint">Ultra-Kurzzeit-RMSSD über 10 s: nicht mit 5-Minuten-Standardmessungen vergleichbar. Mindestens 5 plausible RR und ein gültiges Nachbarpaar nötig. Artefakte unterbrechen Paare. Geglättet: Mittel der letzten 3 gültigen Fensterwerte, beim Anlauf 1–2. Empfangszeit pro RR; Fensterpuls = 60.000 / mittleres RR in ms. Der Bezug auf 60 bpm ist keine vollständige physiologische Korrektur aller Pulseinflüsse.</p>
       </div>
     </section>
     <section class="panel" aria-labelledby="rr-title">
