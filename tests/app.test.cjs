@@ -6,7 +6,7 @@ class CustomEvent extends Event { constructor(type, options) { super(type); this
 const context = { EventTarget, CustomEvent, navigator: {}, isSecureContext: true, performance, setTimeout, clearTimeout };
 vm.createContext(context);
 const source = fs.readFileSync(require('node:path').join(__dirname, '../app.js'), 'utf8');
-vm.runInContext(source.replace('  init();', '  globalThis.test = { parseMeasurement, statistics, h10, RingBuffer, estimateBreathing, OrthostaticTest, SessionStore, csvForEvents, summarizeEvents };'), context);
+vm.runInContext(source.replace('  init();', '  globalThis.test = { parseMeasurement, statistics, h10, RingBuffer, estimateBreathing, OrthostaticTest, SessionStore, csvForEvents, summarizeEvents, LiveSDNN };'), context);
 const { parseMeasurement: parse, statistics: stats, h10 } = context.test;
 let count = 0;
 function test(name, f) { f(); count++; console.log('PASS', name); }
@@ -138,6 +138,69 @@ test('session summaries preserve gap and ortho phase boundaries',()=>{
  const rows=[event([800]),event([]),event([1000])];
  assert.equal(summarizeEvents(rows,{filter:true}).pairs,0);
  assert.equal(summarizeEvents([{...event([800]),phase:'lying'},{...event([1000]),phase:'standing'}],{filter:true}).pairs,0);
+});
+const { LiveSDNN } = context.test;
+const batchSDNN = values => {
+ const mean = values.reduce((a,b)=>a+b,0)/values.length;
+ return Math.sqrt(values.reduce((sum,x)=>sum+(x-mean)**2,0)/(values.length-1));
+};
+test('live SDNN needs five values and uses n-1; constant values yield zero',()=>{
+ const live=new LiveSDNN();
+ for(let i=0;i<4;i++) live.add(i*1000,800+i*100);
+ assert.equal(live.value(),null);assert.equal(live.value(true),null);
+ live.add(4000,1200);assert.ok(Math.abs(live.value()-Math.sqrt(25000))<1e-9);
+ live.reset();for(let i=0;i<5;i++)live.add(i*1000,1000);
+ assert.equal(live.value(),0);assert.equal(live.count,5);
+});
+test('live SDNN artifact boundaries are inclusive and artifacts do not alter smoothing',()=>{
+ const live=new LiveSDNN();[300,500,800,1000,2000].forEach(x=>live.add(0,x));
+ const raw=live.value(),smooth=live.value(true);
+ for(const x of [299,2001,NaN,Infinity])live.add(0,x);
+ assert.equal(live.count,5);assert.equal(live.value(),raw);assert.equal(live.value(true),smooth);
+});
+test('live SDNN expires by timestamps including silence and exact 10 s boundary',()=>{
+ const live=new LiveSDNN();for(let i=0;i<5;i++)live.add(i*1000,800+i*100);
+ live.expire(10000);assert.equal(live.count,5);
+ live.expire(10001);assert.equal(live.count,4);assert.equal(live.value(true),null);
+ live.expire(14001);assert.equal(live.count,0);assert.equal(live.historyCount,0);
+});
+test('live SDNN processes multiple RR with identical packet timestamps',()=>{
+ const live=new LiveSDNN();[800,900,1000,1100,1200].forEach(x=>live.add(5000,x));
+ live.expire(15000);assert.equal(live.count,5);
+ live.expire(15001);assert.equal(live.count,0);
+});
+test('live smoothing averages only last three unrounded estimates; reads do not add estimates',()=>{
+ const live=new LiveSDNN(),values=[],raw=[];
+ [800,900,1000,1100,1200,1300,1400,1500].forEach((x,i)=>{
+  values.push(x);live.add(i*1000,x);
+  if(values.length>=5)raw.push(batchSDNN(values));
+ });
+ const expected=raw.slice(-3).reduce((a,b)=>a+b,0)/3;
+ assert.ok(Math.abs(live.value(true)-expected)<1e-9);
+ live.expire(8000);live.value();live.value(true);assert.ok(Math.abs(live.value(true)-expected)<1e-9);
+ live.expire(11001); // 800 und 900 verfallen, noch sechs Werte.
+ const newRaw=batchSDNN(values.slice(2));
+ assert.ok(Math.abs(live.value(true)-(raw[2]+raw[3]+newRaw)/3)<1e-9);
+});
+test('live history resets after insufficient window and reconnect reset',()=>{
+ const live=new LiveSDNN();[300,500,800,1000,2000].forEach(x=>live.add(0,x));
+ live.expire(10001);[1000,1000,1000,1000,1000].forEach(x=>live.add(11000,x));
+ assert.equal(live.value(true),0);live.reset();assert.equal(live.count,0);assert.equal(live.value(true),null);
+});
+test('inverse Welford matches batch variance over long rolling stream',()=>{
+ const live=new LiveSDNN();let reference=[];
+ for(let i=0;i<20000;i++){
+  const t=i*137,ms=300+(i*73)%1701;
+  live.add(t,ms);reference=reference.filter(x=>x.t>=t-10000);reference.push({t,ms});
+  assert.equal(live.count,reference.length);
+  if(reference.length>=5)assert.ok(Math.abs(live.value()-batchSDNN(reference.map(x=>x.ms)))<1e-6);
+ }
+});
+test('live SDNN fixed storage wraps and keeps inverse variance consistent',()=>{
+ const live=new LiveSDNN(8);
+ for(let i=0;i<100;i++)live.add(0,800+i);
+ assert.equal(live.rr.length,8);assert.equal(live.count,8);
+ assert.ok(Math.abs(live.value()-batchSDNN([892,893,894,895,896,897,898,899]))<1e-9);
 });
 class Characteristic extends EventTarget {
  async startNotifications() { return this; }

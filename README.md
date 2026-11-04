@@ -23,6 +23,18 @@ Gurt anlegen, Elektroden befeuchten, Bluetooth aktivieren und über „Verbinden
 - Peak-Suche ausschließlich **0,04–0,15 Hz**, Ausgabe `Peak-Hz × 60` (2,4–9/min). Ohne deutlichen Peak (Leistung mindestens dreimal Bandmedian) oder mit zu wenig zusammenhängenden Daten bleibt der Wert leer. Auflösung: `240 / FFT-Länge` pro Minute. Artefakte, fehlender Sensorkontakt und Datenlücken werden nicht spektral überbrückt; bei veralteten RR wird die Anzeige ausgeblendet.
 - **Wesentliche Grenze:** LF-Leistung kann auch Kreislauf-/Baroreflex-Regulation abbilden. Normale schnellere Atmung liegt häufig im HF-Band und wird von dieser LF-Näherung nicht erfasst. Die Zahl ist keine validierte Atemfrequenzmessung.
 
+## Große Live-SDNN-Anzeige (10 Sekunden)
+
+Unter dem Puls erscheint SDNN gleich groß, mit einer Dezimalstelle, Einheit ms und Anzahl der **plausiblen** RR im zeitbasierten 10-s-Fenster. Weniger als fünf Werte ergeben „—“; fünf identische Werte ergeben korrekt „0,0“. Genau zehn Sekunden alte Werte bleiben bis zum Überschreiten der Grenze enthalten. Empfangszeit je RR entspricht dem vorhandenen Paketzeitstempel; mehrere RR eines BLE-Pakets besitzen denselben Zeitstempel.
+
+Der separate Puffer (maximal 2048 Slots) verwendet Welford samt inverser Entfernung: Hinzufügen und Entfernen benötigen je O(1); die Ablaufbereinigung ist amortisiert O(1) pro RR. SDNN ist `sqrt(M2 / (n - 1))`. Kein erneuter Durchlauf über das Live-Fenster pro Schlag. Ein 250-ms-Timer lässt Werte auch ohne neue Notifications auslaufen. Bei Trennen/erneutem Verbindungsversuch wird nur dieser neue Live-Puffer zurückgesetzt.
+
+RR unter 300 oder über 2000 ms sind für diese Anzeige immer ausgeschlossen, unabhängig vom bisherigen Statistikfilter. Stream, Session-Rohwerte, CSV und bestehende Dashboard-Statistik werden dadurch nicht verändert.
+
+Die Auswahl **Roh / Geglättet** betrifft nur die Darstellung. Standard ist „Geglättet“: arithmetischer Mittelwert der letzten drei ungerundeten gültigen SDNN-Fensterwerte, beim Anlauf der verfügbaren ein bis zwei Werte. Neue plausible RR und zeitbedingte Fensteränderungen erzeugen neue Schätzwerte; bloßes Neuzeichnen oder Umschalten erzeugt keine zusätzlichen Schätzwerte. Bei weniger als fünf RR wird auch die Glättungshistorie geleert. Erst der ausgegebene Wert wird auf eine Dezimalstelle gerundet.
+
+**Ultra-Kurzzeit-SDNN über zehn Sekunden ist nicht mit Fünf-Minuten-Standardmessungen vergleichbar.**
+
 ## Schritt 2: Orthostatischer Test
 
 1. In Ruhe hinlegen und „Test starten“ drücken. Standard: 60 Sekunden Liegen, anschließend 60 Sekunden Stehen; jede Phase ist auf 15–300 Sekunden konfigurierbar.

@@ -24,6 +24,15 @@
       <div class="meta"><span id="contact">Kontakt: unbekannt</span><span id="battery">Batterie: –</span></div>
       <div class="heart-value"><span id="hr">–</span><span class="unit">bpm</span></div>
       <p id="freshness">Warte auf Messdaten</p>
+      <div class="live-hrv" aria-labelledby="live-sdnn-title" aria-describedby="live-sdnn-note">
+        <h2 id="live-sdnn-title">SDNN</h2>
+        <div class="heart-value"><span id="live-sdnn">—</span><span class="unit">ms</span></div>
+        <p id="live-sdnn-count">0 RR · 10 s-Fenster</p>
+        <label class="field">Live-SDNN-Anzeige
+          <select id="live-sdnn-mode"><option value="raw">Roh</option><option value="smoothed" selected>Geglättet</option></select>
+        </label>
+        <p id="live-sdnn-note" class="hint">Ultra-Kurzzeit-SDNN über 10 s: nicht mit 5-Minuten-Standardmessungen vergleichbar. Mindestens 5 plausible RR nötig. Geglättet: Mittel der letzten 3 gültigen Fensterwerte; Anlauf mit 1–2 Werten. Empfangszeit pro RR; Artefakte werden hier immer ausgeschlossen.</p>
+      </div>
     </section>
     <section class="panel" aria-labelledby="rr-title">
       <div class="section-heading"><h2 id="rr-title">RR-Intervalle</h2><span>ms · letzte 40 Werte</span></div>
