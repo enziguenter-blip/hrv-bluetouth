@@ -5,5 +5,7 @@
 
 [hidden]{display:none!important}.sessions-list{list-style:none;padding:0;margin:0}.sessions-list li{padding:18px 0;border-top:1px solid #334a5b;overflow-wrap:anywhere}.sessions-list h3{margin:0;font-size:1rem}.sessions-list p{font-size:.9rem}#ortho-status{font-size:1.2rem;font-weight:700;color:var(--accent)}#ortho-result{line-height:1.8}
 
-/* Die neue Live-Zahl hat dieselbe Schriftgröße und Gewichtung wie der Puls. */
-#live-sdnn{font-size:clamp(6rem,25vw,9rem);font-weight:850;letter-spacing:-.07em;line-height:1.2}.live-hrv{border-top:1px solid #334a5b;margin-top:20px;padding-top:20px;text-align:center}.live-hrv h2{margin-bottom:0;color:var(--accent)}.live-hrv .field{justify-content:center}.live-hrv .hint{text-align:left}.live-hrv>p{margin-top:0}select:focus-visible{outline:3px solid #fff;outline-offset:4px}
+/* Beide Live-HRV-Zahlen erscheinen untereinander mit gleicher Gewichtung. */
+.live-number{font-size:clamp(6rem,25vw,9rem);font-weight:850;letter-spacing:-.07em;line-height:1.2}.live-hrv{border-top:1px solid #334a5b;margin-top:20px;padding-top:20px;text-align:center}.live-hrv h2{margin-bottom:0;color:var(--accent)}.live-hrv .field{justify-content:center}.live-hrv .hint{text-align:left}.live-hrv>p{margin-top:0}select:focus-visible{outline:3px solid #fff;outline-offset:4px}
+
+.live-hrv .heart-value{flex-wrap:wrap}.live-hrv .normalized-title{border-top:1px solid #334a5b;margin-top:20px;padding-top:20px}.live-hrv .normalization-formula{text-align:center}@media(max-width:360px){.live-number{font-size:clamp(4rem,24vw,9rem)}}

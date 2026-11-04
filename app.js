@@ -35,72 +35,88 @@
   }
   const isArtifact = ms => ms < 300 || ms > 2000;
 
-  // Eigener 10-s-Puffer: Welford mit inverser Entfernung, amortisiert O(1) pro RR.
-  class LiveSDNN {
+  // Separater 10-s-Puffer: RR-Summe und Summe gültiger Differenzenquadrate.
+  // Artefakte und Segmentwechsel erzeugen keine künstlichen Nachbarpaare.
+  class LiveRMSSD {
     constructor(capacity = BUFFER_CAPACITY) {
       this.times = new Float64Array(capacity);
       this.rr = new Float64Array(capacity);
+      this.links = new Uint8Array(capacity);
       this.history = new Float64Array(3);
+      this.ratioHistory = new Float64Array(3);
       this.reset();
     }
     reset() {
-      this.start = this.count = this.mean = this.m2 = 0;
-      this.historyStart = this.historyCount = this.historySum = 0;
+      this.start = this.count = this.rrSum = this.squares = this.pairs = 0;
+      this.sequence = 0; this.lastSequence = -1; this.lastSegment = null;
+      this.historyStart = this.historyCount = this.historySum = this.ratioSum = 0;
     }
     removeOldest() {
       const value = this.rr[this.start];
-      if (this.count === 1) this.mean = this.m2 = 0;
-      else {
-        const nextMean = this.mean + (this.mean - value) / (this.count - 1);
-        this.m2 = Math.max(0, this.m2 - (value - this.mean) * (value - nextMean));
-        this.mean = nextMean;
+      if (this.count > 1) {
+        const next = (this.start + 1) % this.rr.length;
+        if (this.links[next]) {
+          this.squares = Math.max(0, this.squares - (this.rr[next] - value) ** 2);
+          this.pairs--;
+          this.links[next] = 0;
+        }
       }
+      this.rrSum -= value;
       this.start = (this.start + 1) % this.rr.length;
       this.count--;
+      if (!this.count) this.rrSum = this.squares = this.pairs = 0;
+      if (!this.pairs) this.squares = 0;
     }
     remember() {
-      if (this.count < 5) {
-        this.historyStart = this.historyCount = this.historySum = 0;
+      if (this.count < 5 || !this.pairs) {
+        this.historyStart = this.historyCount = this.historySum = this.ratioSum = 0;
         return;
       }
-      const value = Math.sqrt(this.m2 / (this.count - 1));
+      const value = Math.sqrt(this.squares / this.pairs);
+      const ratio = value / (this.rrSum / this.count);
+      const index = (this.historyStart + this.historyCount) % 3;
       if (this.historyCount === 3) {
-        this.historySum -= this.history[this.historyStart];
-        this.history[this.historyStart] = value;
+        this.historySum -= this.history[index];
+        this.ratioSum -= this.ratioHistory[index];
         this.historyStart = (this.historyStart + 1) % 3;
-      } else {
-        this.history[(this.historyStart + this.historyCount) % 3] = value;
-        this.historyCount++;
-      }
-      this.historySum += value;
+      } else this.historyCount++;
+      this.history[index] = value; this.ratioHistory[index] = ratio;
+      this.historySum += value; this.ratioSum += ratio;
     }
     expire(now, remember = true) {
       const previousCount = this.count;
-      // Genau 10 s alte Werte gehören noch dazu; nur ältere Werte entfernen.
+      // Genau 10 s alte Werte bleiben enthalten; nur ältere Werte entfernen.
       while (this.count && this.times[this.start] < now - 10_000) this.removeOldest();
-      if (this.count < 5 || (remember && this.count !== previousCount)) this.remember();
+      if (this.count < 5 || !this.pairs || (remember && this.count !== previousCount)) this.remember();
       return this.count !== previousCount;
     }
-    add(t, ms) {
+    add(t, ms, segment = 0) {
       const expired = this.expire(t, false);
+      this.sequence++;
       if (!Number.isFinite(ms) || isArtifact(ms)) {
         if (expired) this.remember();
         return;
       }
       if (this.count === this.rr.length) this.removeOldest();
       const index = (this.start + this.count) % this.rr.length;
-      this.times[index] = t; this.rr[index] = ms;
-      this.count++;
-      const delta = ms - this.mean;
-      this.mean += delta / this.count;
-      this.m2 = Math.max(0, this.m2 + delta * (ms - this.mean));
+      const linked = this.count > 0 && this.lastSequence === this.sequence - 1 && this.lastSegment === segment;
+      if (linked) {
+        const previous = (index + this.rr.length - 1) % this.rr.length;
+        this.squares += (ms - this.rr[previous]) ** 2;
+        this.pairs++;
+      }
+      this.times[index] = t; this.rr[index] = ms; this.links[index] = Number(linked);
+      this.count++; this.rrSum += ms;
+      this.lastSequence = this.sequence; this.lastSegment = segment;
       this.remember();
     }
     value(smoothed = false) {
-      if (this.count < 5) return null;
-      return smoothed && this.historyCount
-        ? Math.max(0, this.historySum / this.historyCount)
-        : Math.sqrt(this.m2 / (this.count - 1));
+      if (this.count < 5 || !this.pairs) return null;
+      const rmssd = smoothed && this.historyCount
+        ? Math.max(0, this.historySum / this.historyCount) : Math.sqrt(this.squares / this.pairs);
+      const ratio = smoothed && this.historyCount
+        ? Math.max(0, this.ratioSum / this.historyCount) : rmssd / (this.rrSum / this.count);
+      return { rmssd, ratio };
     }
   }
 
@@ -478,11 +494,11 @@
 
   function init() {
     const $ = id => document.getElementById(id);
-    const ui = Object.fromEntries(['status', 'device', 'connect', 'message', 'contact', 'battery', 'hr', 'freshness', 'live-sdnn', 'live-sdnn-count', 'live-sdnn-mode',
+    const ui = Object.fromEntries(['status', 'device', 'connect', 'message', 'contact', 'battery', 'hr', 'freshness', 'live-rmssd', 'live-rmssd-normalized', 'live-rmssd-count', 'live-rmssd-mode',
       'chart', 'rr-list', 'rr-empty', 'filter', 'mean-hr', 'mean-rr', 'sdnn', 'rmssd', 'sample-count',
       'record', 'export', 'record-status', 'pnn50', 'trim-hr', 'stats-window', 'breathing', 'breathing-info', 'ortho-start', 'ortho-stand', 'ortho-cancel', 'lying-seconds', 'standing-seconds', 'ortho-status', 'ortho-result', 'session-name', 'save-session', 'sessions-list', 'sessions-status', 'ortho-save', 'ortho-export'].map(id => [id, $(id)]));
     const heartRates = new RingBuffer(), intervals = new RingBuffer();
-    const liveSDNN = new LiveSDNN();
+    const liveRMSSD = new LiveRMSSD();
     let recent = [], lastFFT = -Infinity, breathing = null;
     let sequence = 0, segment = 0, lastReceived = null, lastContact = 'unsupported';
     let recording = false, rowCount = 0;
@@ -569,12 +585,15 @@
       renderRecording();
     }
 
-    function renderLiveSDNN() {
-      liveSDNN.expire(performance.now());
-      const value = liveSDNN.value(ui['live-sdnn-mode'].value === 'smoothed');
-      ui['live-sdnn'].textContent = value === null ? '—'
-        : value.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-      ui['live-sdnn-count'].textContent = `${liveSDNN.count} RR · 10 s-Fenster`;
+    function renderLiveRMSSD() {
+      liveRMSSD.expire(performance.now());
+      const value = liveRMSSD.value(ui['live-rmssd-mode'].value === 'smoothed');
+      const format = n => n === null ? '—' : n.toLocaleString('de-DE', {
+        minimumFractionDigits: 1, maximumFractionDigits: 1
+      });
+      ui['live-rmssd'].textContent = format(value?.rmssd ?? null);
+      ui['live-rmssd-normalized'].textContent = format(value ? value.ratio * 100 : null);
+      ui['live-rmssd-count'].textContent = `${liveRMSSD.count} RR · ${liveRMSSD.pairs} Paare · 10 s-Fenster`;
     }
 
     function draw() {
@@ -682,7 +701,7 @@
       renderRecording();
     }
     h10.events.addEventListener('state', ({ detail: state }) => {
-      if (state !== 'connected') { liveSDNN.reset(); renderLiveSDNN(); }
+      if (state !== 'connected') { liveRMSSD.reset(); renderLiveRMSSD(); }
       ui.status.dataset.state = state;
       ui.status.textContent = { disconnected: 'Getrennt', connecting: 'Verbinde', connected: 'Verbunden' }[state];
       ui.connect.disabled = state === 'connecting';
@@ -713,7 +732,7 @@
       ui.hr.textContent = String(data.hr);
       const packetSamples = [];
       for (const ms of data.rr) {
-        liveSDNN.add(t, ms); // Nur die neue Anzeige filtert hier; Rohwerte bleiben erhalten.
+        liveRMSSD.add(t, ms, segment); // Nur die Live-Anzeigen filtern hier; Rohwerte bleiben erhalten.
         const sample = { t, ms, seq: ++sequence, segment, contact: data.contact };
         intervals.push(sample); recent.push(sample); packetSamples.push(sample);
       }
@@ -742,7 +761,7 @@
       });
       ui['rr-list'].replaceChildren(...items);
       ui['rr-empty'].hidden = recent.length > 0;
-      renderStats(); renderRecording(); draw(); renderLiveSDNN();
+      renderStats(); renderRecording(); draw(); renderLiveRMSSD();
     });
     ui['ortho-start'].addEventListener('click', () => {
       if (h10.state !== 'connected' || lastRRReceived === null || performance.now() - lastRRReceived > 5000) {
@@ -784,7 +803,7 @@
       if (h10.state === 'connected') h10.disconnect();
       else void h10.connect();
     });
-    ui['live-sdnn-mode'].addEventListener('change', renderLiveSDNN);
+    ui['live-rmssd-mode'].addEventListener('change', renderLiveRMSSD);
     ui.filter.addEventListener('change', renderStats);
     ui['trim-hr'].addEventListener('change', renderStats);
     ui['stats-window'].addEventListener('change', renderStats);
@@ -821,14 +840,14 @@
       renderStats();
     });
     setInterval(renderStats, 1000);
-    setInterval(renderLiveSDNN, 250); // Fenster läuft auch ohne neue Notifications ab.
+    setInterval(renderLiveRMSSD, 250); // Fenster läuft auch ohne neue Notifications ab.
     if (!globalThis.isSecureContext || !navigator.bluetooth) {
       ui.connect.disabled = true;
       message('Bitte Chrome verwenden, HTTPS erforderlich. Web Bluetooth ist hier nicht verfügbar.', true);
     }
     try { store.load(); }
     catch (error) { ui['sessions-status'].textContent = error.message; }
-    renderSessions(); renderRecording(); renderStats(); draw(); renderLiveSDNN();
+    renderSessions(); renderRecording(); renderStats(); draw(); renderLiveRMSSD();
   }
   init();
 })();

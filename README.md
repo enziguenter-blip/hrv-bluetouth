@@ -23,17 +23,19 @@ Gurt anlegen, Elektroden befeuchten, Bluetooth aktivieren und über „Verbinden
 - Peak-Suche ausschließlich **0,04–0,15 Hz**, Ausgabe `Peak-Hz × 60` (2,4–9/min). Ohne deutlichen Peak (Leistung mindestens dreimal Bandmedian) oder mit zu wenig zusammenhängenden Daten bleibt der Wert leer. Auflösung: `240 / FFT-Länge` pro Minute. Artefakte, fehlender Sensorkontakt und Datenlücken werden nicht spektral überbrückt; bei veralteten RR wird die Anzeige ausgeblendet.
 - **Wesentliche Grenze:** LF-Leistung kann auch Kreislauf-/Baroreflex-Regulation abbilden. Normale schnellere Atmung liegt häufig im HF-Band und wird von dieser LF-Näherung nicht erfasst. Die Zahl ist keine validierte Atemfrequenzmessung.
 
-## Große Live-SDNN-Anzeige (10 Sekunden)
+## Große Live-RMSSD-Anzeigen (10 Sekunden)
 
-Unter dem Puls erscheint SDNN gleich groß, mit einer Dezimalstelle, Einheit ms und Anzahl der **plausiblen** RR im zeitbasierten 10-s-Fenster. Weniger als fünf Werte ergeben „—“; fünf identische Werte ergeben korrekt „0,0“. Genau zehn Sekunden alte Werte bleiben bis zum Überschreiten der Grenze enthalten. Empfangszeit je RR entspricht dem vorhandenen Paketzeitstempel; mehrere RR eines BLE-Pakets besitzen denselben Zeitstempel.
+Unter dem Puls stehen zwei große Zahlen **untereinander**: Live-RMSSD in ms und pulsnormierte Live-RMSSD als **CV-RMSSD in Prozent**. Beide verwenden dasselbe zeitbasierte 10-s-Fenster, denselben festen Ringpuffer (2048 Slots) und dieselben plausiblen RR (300–2000 ms). Mindestens fünf plausible RR und ein gültiges Nachbarpaar sind erforderlich; sonst erscheint „—“. Konstante RR ergeben korrekt „0,0“. Die separate SDNN-Anzeige im bestehenden Statistik-Dashboard bleibt unverändert.
 
-Der separate Puffer (maximal 2048 Slots) verwendet Welford samt inverser Entfernung: Hinzufügen und Entfernen benötigen je O(1); die Ablaufbereinigung ist amortisiert O(1) pro RR. SDNN ist `sqrt(M2 / (n - 1))`. Kein erneuter Durchlauf über das Live-Fenster pro Schlag. Ein 250-ms-Timer lässt Werte auch ohne neue Notifications auslaufen. Bei Trennen/erneutem Verbindungsversuch wird nur dieser neue Live-Puffer zurückgesetzt.
+RMSSD = `sqrt(Summe gültiger aufeinanderfolgender RR-Differenzen² / Anzahl dieser Paare)`. Ausgefilterte Werte und Segmentwechsel erzeugen keine neuen Nachbarschaften. **CV-RMSSD = 100 × RMSSD / mittleres RR**, wobei das mittlere RR aus allen plausiblen RR desselben Fensters stammt. Diese relative Kennzahl ist keine vollständige physiologische Korrektur des Herzfrequenzeinflusses und keine auf 60 bpm umgerechnete RMSSD in ms.
 
-RR unter 300 oder über 2000 ms sind für diese Anzeige immer ausgeschlossen, unabhängig vom bisherigen Statistikfilter. Stream, Session-Rohwerte, CSV und bestehende Dashboard-Statistik werden dadurch nicht verändert.
+Genau zehn Sekunden alte Werte bleiben bis zum Überschreiten der Grenze enthalten. Empfangszeit je RR entspricht dem vorhandenen Paketzeitstempel; mehrere RR eines BLE-Pakets besitzen denselben Zeitstempel. RR-Summe, Differenzenquadratsumme und Paarzahl werden beim Hinzufügen und Entfernen aktualisiert: je O(1), Ablaufbereinigung amortisiert O(1) pro RR. Kein erneuter Durchlauf über das gesamte Fenster pro Schlag. Ein 250-ms-Timer lässt Werte auch ohne neue Notifications auslaufen. Beim Trennen/erneuten Verbindungsversuch wird nur dieser Live-Puffer zurückgesetzt.
 
-Die Auswahl **Roh / Geglättet** betrifft nur die Darstellung. Standard ist „Geglättet“: arithmetischer Mittelwert der letzten drei ungerundeten gültigen SDNN-Fensterwerte, beim Anlauf der verfügbaren ein bis zwei Werte. Neue plausible RR und zeitbedingte Fensteränderungen erzeugen neue Schätzwerte; bloßes Neuzeichnen oder Umschalten erzeugt keine zusätzlichen Schätzwerte. Bei weniger als fünf RR wird auch die Glättungshistorie geleert. Erst der ausgegebene Wert wird auf eine Dezimalstelle gerundet.
+Artefakte sind für die beiden Live-Anzeigen immer ausgeschlossen, unabhängig vom bisherigen Statistikfilter. Stream, Session-Rohwerte, CSV, Parser, BLE-Verbindungslogik und bestehende Dashboard-Statistik werden dadurch nicht verändert.
 
-**Ultra-Kurzzeit-SDNN über zehn Sekunden ist nicht mit Fünf-Minuten-Standardmessungen vergleichbar.**
+Die Auswahl **Roh / Geglättet** betrifft beide Live-Zahlen. Standard ist „Geglättet“: arithmetisches Mittel der letzten drei ungerundeten gültigen Fensterwerte, beim Anlauf der verfügbaren ein bis zwei Werte. RMSSD und CV-RMSSD werden jeweils separat geglättet (also Mittel der normierten Einzelwerte, nicht nachträglich durch ein anderes RR-Mittel teilen). Neue plausible RR und zeitbedingte Fensteränderungen erzeugen neue Schätzwerte; bloßes Neuzeichnen oder Umschalten erzeugt keine zusätzlichen Schätzwerte. Bei weniger als fünf RR oder ohne gültiges Paar wird die Glättungshistorie geleert. Erst der ausgegebene Wert wird auf eine Dezimalstelle gerundet.
+
+**Ultra-Kurzzeit-RMSSD über zehn Sekunden ist nicht mit Fünf-Minuten-Standardmessungen vergleichbar.**
 
 ## Schritt 2: Orthostatischer Test
 
